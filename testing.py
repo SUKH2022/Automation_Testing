@@ -182,9 +182,17 @@ def test_standard_report_columns(report_path, design_spec_path, design_header_ro
         }
 
 def test_summary_calculations(report_path):
-    """Test summary page calculations against standard report data"""
+    """Test summary page calculations against standard report data by reading expected values from Summary_Page (Column B, Rows 3,4,6)"""
     try:
-        # Read the second sheet (Standard Report)
+        # Read expected values from Summary_Page (Sheet 3)
+        summary_df = pd.read_excel(report_path, sheet_name=2, header=None)  # Sheet index 2 (0-based)
+        
+        # Get expected values from Column B (index 1), Rows 3,4,6 (0-based: 2,3,5)
+        expected_bf = int(summary_df.iloc[2, 1])      # B3 (Row 3, Column B)
+        expected_approved = int(summary_df.iloc[3, 1]) # B4 (Row 4, Column B)
+        expected_eop = int(summary_df.iloc[5, 1])      # B6 (Row 6, Column B)
+        
+        # Now read the standard report data (Sheet 1)
         report_df = pd.read_excel(report_path, sheet_name=1, header=1)
         
         # Clean up column names by stripping whitespace
@@ -197,6 +205,7 @@ def test_summary_calculations(report_path):
         
         # Remove empty rows
         report_df = report_df.dropna(how='all')
+        
     except Exception as e:
         return {
             'brought_forward': {'passed': False, 'message': f"Error reading report data: {str(e)}"},
@@ -204,19 +213,21 @@ def test_summary_calculations(report_path):
             'end_of_period': {'passed': False, 'message': f"Error reading report data: {str(e)}"}
         }
     
-    # Initialize test results
+    # Initialize test results with values from summary page
     test_results = {
-        'brought_forward': {'passed': False, 'expected': 206, 'actual': 0, 'message': ''},
-        'approved': {'passed': False, 'expected': 144, 'actual': 0, 'message': ''},
-        'end_of_period': {'passed': False, 'expected': 149, 'actual': 0, 'message': ''}
+        'brought_forward': {'passed': False, 'expected': expected_bf, 'actual': 0, 'message': ''},
+        'approved': {'passed': False, 'expected': expected_approved, 'actual': 0, 'message': ''},
+        'end_of_period': {'passed': False, 'expected': expected_eop, 'actual': 0, 'message': ''}
     }
     
     # Test 1: Number of Distinct Approved Providers Brought Forward
     if 'BF' in report_df.columns:
         bf_count = report_df['BF'].str.lower().str.strip().eq('yes').sum()
         test_results['brought_forward']['actual'] = bf_count
-        test_results['brought_forward']['passed'] = bf_count == test_results['brought_forward']['expected']
-        test_results['brought_forward']['message'] = f"BF count: Expected {test_results['brought_forward']['expected']}, Found {bf_count}"
+        test_results['brought_forward']['passed'] = bf_count == expected_bf
+        test_results['brought_forward']['message'] = (
+            f"Brought Forward: Expected {expected_bf} (from Summary B3), Found {bf_count}"
+        )
     else:
         test_results['brought_forward']['message'] = "BF column not found in report"
     
@@ -224,18 +235,23 @@ def test_summary_calculations(report_path):
     if 'Approved' in report_df.columns:
         approved_count = report_df['Approved'].str.lower().str.strip().eq('yes').sum()
         test_results['approved']['actual'] = approved_count
-        test_results['approved']['passed'] = approved_count == test_results['approved']['expected']
-        test_results['approved']['message'] = f"Approved count: Expected {test_results['approved']['expected']}, Found {approved_count}"
+        test_results['approved']['passed'] = approved_count == expected_approved
+        test_results['approved']['message'] = (
+            f"Approved: Expected {expected_approved} (from Summary B4), Found {approved_count}"
+        )
     else:
         test_results['approved']['message'] = "Approved column not found in report"
     
     # Test 3: Number of Distinct Approved Providers End of Period
     if 'Closed' in report_df.columns:
         closed_count = report_df['Closed'].str.lower().str.strip().eq('yes').sum()
-        calculated_eop = (test_results['brought_forward']['actual'] + test_results['approved']['actual']) - closed_count
+        calculated_eop = (bf_count + approved_count) - closed_count
         test_results['end_of_period']['actual'] = calculated_eop
-        test_results['end_of_period']['passed'] = calculated_eop == test_results['end_of_period']['expected']
-        test_results['end_of_period']['message'] = f"End of Period: Expected {test_results['end_of_period']['expected']}, Calculated {calculated_eop} (BF: {test_results['brought_forward']['actual']} + Approved: {test_results['approved']['actual']} - Closed: {closed_count})"
+        test_results['end_of_period']['passed'] = calculated_eop == expected_eop
+        test_results['end_of_period']['message'] = (
+            f"End of Period: Expected {expected_eop} (from Summary B6), Calculated {calculated_eop}\n"
+            f"(BF: {bf_count} + Approved: {approved_count} - Closed: {closed_count})"
+        )
     else:
         test_results['end_of_period']['message'] = "Closed column not found in report"
     
