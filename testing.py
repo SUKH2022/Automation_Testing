@@ -77,49 +77,108 @@ def test_cover_page(report_path, expected_version):
     
     return test_results
 
-def test_standard_report_columns(report_path, design_spec_path, header_row=8, data_start_row=2):
+def test_standard_report_columns(report_path, design_spec_path, design_header_row=7, report_sheet_name=1, report_header_row=2):
     """Test if standard report columns match design spec"""
-    # Read design spec (CSV file)
+    # Read design spec columns (CSV file)
     try:
-        design_spec = pd.read_csv(design_spec_path, header=header_row-1, nrows=1)
-        design_columns = [col.strip() for col in design_spec.columns]
+        # Read entire CSV file
+        with open(design_spec_path, 'r') as f:
+            csv_lines = f.readlines()
+        
+        # Get header row (row 7, but 0-indexed as 6)
+        if len(csv_lines) >= design_header_row:
+            design_header_line = csv_lines[design_header_row-1].strip()
+            design_columns = [col.strip() for col in design_header_line.split(',') if col.strip()]
+        else:
+            return {
+                'passed': False,
+                'message': f"Design spec CSV has fewer than {design_header_row} rows"
+            }
     except Exception as e:
         return {
             'passed': False,
-            'message': f"Error reading design spec: {str(e)}"
+            'message': f"Error reading design spec CSV: {str(e)}"
         }
     
-    # Read report (Excel file)
+    # Read report columns (Excel file)
     try:
-        report_df = pd.read_excel(report_path, sheet_name=1, header=data_start_row-1, nrows=1)
-        report_columns = [col.strip() for col in report_df.columns]
+        # Read report Excel file
+        report_df = pd.read_excel(report_path, sheet_name=report_sheet_name, header=None)
+        
+        # Get header row (row 2, but 0-indexed as 1)
+        if len(report_df) >= report_header_row:
+            report_columns = report_df.iloc[report_header_row-1].tolist()
+            report_columns = [str(col).strip() for col in report_columns if pd.notna(col)]
+        else:
+            return {
+                'passed': False,
+                'message': f"Report sheet has fewer than {report_header_row} rows"
+            }
     except Exception as e:
         return {
             'passed': False,
-            'message': f"Error reading report: {str(e)}"
+            'message': f"Error reading report Excel: {str(e)}"
         }
     
-    # Compare columns
+    # Compare column counts
     if len(design_columns) != len(report_columns):
         return {
             'passed': False,
             'message': f"Column count mismatch. Design: {len(design_columns)}, Report: {len(report_columns)}"
         }
     
+    # Enhanced comparison with detailed analysis
     mismatches = []
     for i, (design_col, report_col) in enumerate(zip(design_columns, report_columns)):
-        if str(design_col).strip().lower() != str(report_col).strip().lower():
-            mismatches.append(f"Column {i+1}: Design='{design_col}' | Report='{report_col}'")
+        # Normalize spaces by replacing multiple spaces with single space
+        design_norm = ' '.join(design_col.split())
+        report_norm = ' '.join(report_col.split())
+        
+        # Check for exact match first
+        if design_col == report_col:
+            continue
+            
+        # Check for normalized match (space differences only)
+        if design_norm == report_norm:
+            # Find the actual space differences
+            if len(design_col) != len(report_col):
+                mismatches.append(f"Column {i+1}: Space difference - Design='{design_col}' vs Report='{report_col}'")
+            else:
+                # Character-by-character comparison for exact difference location
+                diff_positions = [j for j, (d, r) in enumerate(zip(design_col, report_col)) if d != r]
+                if all(design_col[p].isspace() or report_col[p].isspace() for p in diff_positions):
+                    mismatches.append(f"Column {i+1}: Space difference - Design='{design_col}' vs Report='{report_col}'")
+                else:
+                    mismatches.append(f"Column {i+1}: Formatting difference - Design='{design_col}' vs Report='{report_col}'")
+        else:
+            # Check for case-insensitive match
+            if design_norm.lower() == report_norm.lower():
+                mismatches.append(f"Column {i+1}: Case difference - Design='{design_col}' vs Report='{report_col}'")
+            else:
+                # Check for word differences
+                design_words = design_norm.lower().split()
+                report_words = report_norm.lower().split()
+                
+                if design_words == report_words:
+                    mismatches.append(f"Column {i+1}: Word order difference - Design='{design_col}' vs Report='{report_col}'")
+                else:
+                    # Find specific word differences
+                    diff_words = [(dw, rw) for dw, rw in zip(design_words, report_words) if dw != rw]
+                    if diff_words:
+                        word_diff_msg = ", ".join(f"'{dw}'≠'{rw}'" for dw, rw in diff_words)
+                        mismatches.append(f"Column {i+1}: Word difference - {word_diff_msg} (Design='{design_col}' vs Report='{report_col}')")
+                    else:
+                        mismatches.append(f"Column {i+1}: Content difference - Design='{design_col}' vs Report='{report_col}'")
     
     if not mismatches:
         return {
             'passed': True,
-            'message': f"All {len(design_columns)} columns match design spec"
+            'message': f"All {len(design_columns)} columns match perfectly between design spec and report"
         }
     else:
         return {
             'passed': False,
-            'message': "Column mismatches:\n" + "\n".join(mismatches)
+            'message': "Column header differences found:\n" + "\n".join(mismatches)
         }
 
 def test_summary_calculations(report_path):
@@ -223,3 +282,29 @@ if __name__ == "__main__":
     expected_version = "1.5"
     
     run_all_tests(report_excel, design_spec_csv, expected_version)
+
+# PS D:\work\college_work\Coop_1\automation\Automation_Testing> & "C:/Program Files/Python312/python.exe" d:/work/college_work/Coop_1/automation/Automation_Testing/testing.py
+# d:\work\college_work\Coop_1\automation\Automation_Testing\testing.py:286: SyntaxWarning: invalid escape sequence '\w'
+#   '''
+# Running tests for report: CB080 - Resource Providers Available (Ottawa 2024-2025).xlsx
+# Expected version: 1.5
+
+# === Cover Page Tests ===
+# TITLE_SPELLING: PASSED - All titles spelled correctly
+# ETL_DATES: PASSED - ETL dates valid: Started 21-Jul-2025 11:31:39 PM before Completed 22-Jul-2025 05:46:16 AM
+# VERSION: FAILED - Version mismatch. Expected: 1.5, Found: 1.4
+
+# === Standard Report Column Tests ===
+# COLUMN_MATCH: FAILED - Column header differences found:
+# Column 7: Space difference - Design='Provider Status Owner  First Name' vs Report='Provider Status Owner First Name'
+# Column 8: Word difference - 'date'≠'end' (Design='Provider Owner  Last Name as of Report Date' vs Report='Provider Owner Last Name as of Report End Date')
+# Column 9: Word difference - 'date'≠'end' (Design='Provider Owner  First Name as of Report Date' vs Report='Provider Owner First Name as of Report End Date')
+# Column 15: Word difference - 'codes'≠'code' (Design='Secondary Eligibility Spectrum Codes' vs Report='Secondary Eligibility Spectrum Code')
+
+# === Summary Calculations Tests ===
+# BROUGHT_FORWARD: PASSED - BF count: Expected 206, Found 206
+# APPROVED: PASSED - Approved count: Expected 144, Found 144
+# END_OF_PERIOD: PASSED - End of Period: Expected 149, Calculated 149 (BF: 206 + Approved: 144 - Closed: 201)
+
+# === FINAL RESULT ===
+# SOME TESTS FAILED
